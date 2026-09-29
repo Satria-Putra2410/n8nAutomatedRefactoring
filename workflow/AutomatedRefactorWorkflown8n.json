@@ -1,0 +1,1583 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "SonarInput",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Sonar Detail",
+              "fieldType": "file"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.5,
+      "position": [
+        -1648,
+        512
+      ],
+      "id": "3d484e15-2b59-4692-afed-20ce8bafa34d",
+      "name": "On SonarQube JSON Submission",
+      "webhookId": "de8b184d-67df-4365-8f83-1a52aae09b0d"
+    },
+    {
+      "parameters": {
+        "operation": "fromJson",
+        "binaryPropertyName": "Sonar_Detail",
+        "destinationKey": "Sonar_Detail_Extracted",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        -1408,
+        512
+      ],
+      "id": "4e11923e-a448-4afb-ac52-c5fce4da6421",
+      "name": "Extract SonarQube JSON"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Assign a single run_id shared by every item in this execution\nconst runId = $execution.id + '_' + Date.now();\nconst item = items[0];\nitem.json.run_id = runId;\nitem.json.run_started_at = new Date().toISOString();\nreturn [item];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1168,
+        512
+      ],
+      "id": "0a918edb-a9c7-4fcd-a9f4-18a627f709b0",
+      "name": "Assign Run ID"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "Sonar_Detail_Extracted.issues",
+        "options": {
+          "disableDotNotation": false
+        }
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        -928,
+        512
+      ],
+      "id": "fabe06f3-b084-42a3-b259-5c50ee4693e4",
+      "name": "Split Out Issues",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map((item, i) => {\n  item.json.issue_id = `$execution.id || 'run'}_${item.json.file_path}_${item.json.rule}_${i}`.replace(/[^a-zA-Z0-9_\\-]/g,'_');\n  // baseline maintainability metric extracted from the SonarQube message when possible\n  const m = /from (\\d+) to the (\\d+) allowed/i.exec(item.json.message || '');\n  item.json.baseline_metric_value = m ? parseInt(m[1], 10) : null;\n  item.json.target_metric_value = m ? parseInt(m[2], 10) : null;\n  return item;\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -688,
+        512
+      ],
+      "id": "ae3f10c4-51cc-4813-ac1e-ad10bedd7b10",
+      "name": "Assign Issue ID"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Deterministic grouping: one output item per unique file_path,\n// carrying the full list of issues reported for that file.\nconst groups = {};\nfor (const item of items) {\n  const fp = item.json.file_path;\n  if (!groups[fp]) {\n    groups[fp] = { file_path: fp, run_id: $execution.id, issues: [] };\n  }\n  groups[fp].issues.push({\n    issue_id: item.json.issue_id,\n    rule: item.json.rule,\n    severity: item.json.severity,\n    type: item.json.type,\n    message: item.json.message,\n    line: item.json.line,\n    textRange: item.json.textRange,\n    baseline_metric_value: item.json.baseline_metric_value,\n    target_metric_value: item.json.target_metric_value\n  });\n}\nreturn Object.values(groups).map(g => ({ json: { ...g, retry_count: 0, status: 'PENDING', feedback_prompt: '' } }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        512
+      ],
+      "id": "35992fab-a0f8-43ca-b947-d589076f8d9c",
+      "name": "Group Issues By File"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -192,
+        512
+      ],
+      "id": "5b873e5a-b746-4f73-a5d0-fc7d69c33f41",
+      "name": "Loop Over Files"
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ '/home/node/.n8n-files/YOURAPPS/' + $json.file_path }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        80,
+        720
+      ],
+      "id": "3c4b1ece-581b-4815-82e5-80934739c63b",
+      "name": "Read Source File"
+    },
+    {
+      "parameters": {
+        "operation": "text",
+        "destinationKey": "Source_code",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        320,
+        720
+      ],
+      "id": "27b49396-0a20-4260-b546-0684c7789ca7",
+      "name": "Extract Source Text"
+    },
+    {
+      "parameters": {
+        "jsCode": "const code = $json.Source_code;\nconst lines = code.split(/\\r?\\n/);\nreturn [{ json: { total_lines: lines.length, lines: lines.map((line, i) => ({ line_number: i + 1, code: line })) } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        720
+      ],
+      "id": "5461225a-fabf-4b91-949d-7bfd84f3c4b1",
+      "name": "Parse Source Lines"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Sequential join (no position-based merge needed): file metadata came from\n// the current 'Loop Over Files' batch item, parsed source came from this branch.\nconst fileMeta = $('Loop Over Files').item.json;\nconst parsed = $json;\nreturn [{ json: {\n  file_path: fileMeta.file_path,\n  run_id: fileMeta.run_id,\n  issues: fileMeta.issues,\n  retry_count: fileMeta.retry_count || 0,\n  feedback_prompt: fileMeta.feedback_prompt || '',\n  total_lines: parsed.total_lines,\n  lines: parsed.lines,\n  source_code: parsed.lines.map(l => l.code).join('\\n')\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        720
+      ],
+      "id": "92a191c8-63bf-4a6b-b698-906bf2af5111",
+      "name": "Prepare File Context"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "issues",
+        "options": {
+          "disableDotNotation": false
+        }
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        720
+      ],
+      "id": "632dfbc5-ceb2-4d5b-8bd4-aa89a5a53d3b",
+      "name": "Split Out Issues For Analysis",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const fileContext = $('Prepare File Context').first().json;\nconst allLines = fileContext.lines ?? [];\n\nreturn $input.all().map(item => {\n  const issue = item.json;\n\n  const start =\n    issue.textRange?.startLine ??\n    issue.line ??\n    1;\n\n  const end =\n    issue.textRange?.endLine ??\n    start;\n\n  const snippet = allLines.filter(line =>\n    line.line_number >= start - 10 &&\n    line.line_number <= end + 10\n  );\n\n  return {\n    json: {\n      ...issue,\n      context_code: snippet\n        .map(line => `${line.line_number}: ${line.code}`)\n        .join('\\n')\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        720
+      ],
+      "id": "71ff93dc-7699-4911-b8d4-f9af77f9ca17",
+      "name": "Build Context Window"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a Senior Software Quality Engineer specializing in software maintainability analysis based on ISO/IEC 25010.\n\nYour responsibility is to interpret SonarQube static analysis results and produce a structured maintainability analysis for downstream agents.\n\nFile:\n{{$json.file_path}}\n\nIssue ID:\n{{$json.issue_id}}\n\nRule:\n{{$json.rule}}\n\nSeverity:\n{{$json.severity}}\n\nIssue Type:\n{{$json.type}}\n\nMessage:\n{{$json.message}}\n\nLine:\n{{$json.line}}\n\nSource Code Context (+-10 lines):\n{{$json.context_code}}\n\nYour tasks:\n1. Interpret the reported issue (rule, type, severity, file).\n2. Identify root cause(s) supported only by the provided source code.\n3. Explain the maintainability impact per ISO/IEC 25010 sub-characteristics.\n4. Assess repair priority.\n5. Summarize concisely for downstream agents.\n6. Generate retrieval keywords for a downstream RAG agent.\n\nConstraints:\n- Only interpret issues explicitly reported by SonarQube.\n- Do NOT invent additional issues.\n- Do NOT modify or generate code.\n- Do NOT give repair suggestions.\n- Return ONLY valid JSON, no markdown.\n\nJSON structure:\n{\n  \"issue_id\": \"\",\n  \"file_path\": \"\",\n  \"rule\": \"\",\n  \"severity\": \"\",\n  \"issue_type\": \"\",\n  \"root_cause\": [],\n  \"maintainability_impact\": \"\",\n  \"affected_iso25010_characteristics\": [],\n  \"repair_priority\": \"\",\n  \"analysis_summary\": \"\",\n  \"retrieval_keywords\": []\n}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1520,
+        720
+      ],
+      "id": "66745ff6-31d8-4be7-8ac3-cc7e7e3998be",
+      "name": "Analyzer Agent"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a Retrieval-Augmented Generation (RAG) Agent specializing in Software Quality Assurance and Maintainability.\n\nYou have access to a Qdrant Knowledge Base (Clean Code, SOLID, Refactoring, Design Patterns, ISO/IEC 25010, Code Smells, Cognitive Complexity, OOP).\n\nInput JSON (Analyzer Agent output):\n{{ $json.output }}\n\nTASKS:\n1. Read the Analyzer output.\n2. Build a semantic query (prefer retrieval_keywords; else use rule/issue_type/root_cause/maintainability_impact).\n3. ALWAYS call the connected Qdrant tool. Do not answer before retrieving.\n4. Only use information returned from Qdrant. Do not invent information.\n5. Summarize retrieved knowledge for the downstream Refactor Agent.\n\nCONSTRAINTS: Do NOT analyze the issue, do NOT recommend refactoring, do NOT generate code. Return ONLY valid JSON, no markdown.\n\nJSON structure:\n{\n  \"issue_id\": \"\",\n  \"file_path\": \"\",\n  \"retrieval_query\": \"\",\n  \"retrieved_topics\": [\"\"],\n  \"retrieved_knowledge\": [ { \"source\": \"\", \"topic\": \"\", \"content\": \"\" } ],\n  \"knowledge_summary\": \"\",\n  \"confidence\": \"\"\n}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1760,
+        720
+      ],
+      "id": "b17c9349-6b65-4aee-bbc0-0b4f500bb78a",
+      "name": "RAG Agent"
+    },
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolDescription": "Search the software engineering knowledge base for Clean Code, SOLID, ISO/IEC 25010, SonarQube rules, refactoring techniques, design patterns, and maintainability concepts relevant to the current issue.",
+        "qdrantCollection": {
+          "__rl": true,
+          "value": "knowledge-base",
+          "mode": "list",
+          "cachedResultName": "knowledge-base"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreQdrant",
+      "typeVersion": 1.3,
+      "position": [
+        1856,
+        896
+      ],
+      "id": "f250f8a1-5ab6-4720-ae1f-0c1c4480eb79",
+      "name": "Qdrant Vector Retrieve",
+      "credentials": {
+        "qdrantApi": {
+          "id": "bxrKpYUWx13KdfNN",
+          "name": "Qdrant account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1856,
+        1040
+      ],
+      "id": "d1defda2-1d08-4e16-a4bc-79819d1ba547",
+      "name": "Embeddings Google Gemini",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "HDTXMXwnskmeosD8",
+          "name": "Gemini Api account mahasiswa"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const ragItems = $input.all();\nconst analyzerItems = $('Analyzer Agent').all();\nconst contextItems = $('Build Context Window').all();\n\nconst results = [];\n\nfor (let i = 0; i < ragItems.length; i++) {\n  const ragItem = ragItems[i];\n  const analyzerItem = analyzerItems[i];\n  const contextItem = contextItems[i];\n\n  let analyzerOut = {};\n  let ragOut = {};\n\n  // Parse Analyzer output\n  try {\n    analyzerOut = JSON.parse(\n      analyzerItem?.json?.output ?? '{}'\n    );\n  } catch (e) {\n    analyzerOut = {\n      parse_error: String(e),\n      raw_output: analyzerItem?.json?.output ?? ''\n    };\n  }\n\n  // Parse RAG output\n  try {\n    ragOut = JSON.parse(\n      ragItem?.json?.output ?? '{}'\n    );\n  } catch (e) {\n    ragOut = {\n      parse_error: String(e),\n      raw_output: ragItem?.json?.output ?? ''\n    };\n  }\n\n  results.push({\n    json: {\n      issue_id:\n        analyzerOut.issue_id ??\n        ragOut.issue_id ??\n        contextItem?.json?.issue_id ??\n        null,\n\n      file_path:\n        analyzerOut.file_path ??\n        ragOut.file_path ??\n        contextItem?.json?.file_path ??\n        null,\n\n      analysis: analyzerOut,\n\n      knowledge: ragOut\n    }\n  });\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        720
+      ],
+      "id": "9e92afd5-8b9b-4dee-ba85-3c5c33154cff",
+      "name": "Attach Issue Analysis Record"
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "issues_analysis",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        2240,
+        720
+      ],
+      "id": "43fc17d6-dfc7-4eff-927c-faacd03d4bba",
+      "name": "Aggregate Issues Analysis For File"
+    },
+    {
+      "parameters": {
+        "jsCode": "const fileCtx = $('Prepare File Context').item.json;\nconst issuesAnalysis = $json.issues_analysis || [];\nreturn [{ json: {\n  file_path: fileCtx.file_path,\n  run_id: fileCtx.run_id,\n  source_code: fileCtx.source_code,\n  issues: fileCtx.issues,\n  issues_analysis: issuesAnalysis,\n  retry_count: fileCtx.retry_count || 0,\n  feedback_prompt: fileCtx.feedback_prompt || ''\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2480,
+        720
+      ],
+      "id": "65fd1b76-26f7-4d53-a5ba-afffe56f3608",
+      "name": "Rebuild Full File Context"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a Senior Software Engineer specializing in software refactoring and maintainability improvement based on ISO/IEC 25010.\n\nRefactor the ENTIRE file below to resolve ALL listed issues in a single, coherent pass. Apply only techniques supported by the Knowledge Base summaries provided per issue.\n\nFile Path:\n{{$json.file_path}}\n\nAttempt Number:\n{{$json.retry_count}}\n\nOriginal Source Code:\n{{$json.source_code}}\n\nMaintainability Issues + Root Causes (all issues for this file):\n{{ JSON.stringify($json.issues_analysis) }}\n\nPrevious Validation Feedback (empty on first attempt; MUST be addressed if present):\n{{$json.feedback_prompt}}\n\nObjectives:\n1. Improve maintainability without changing functional behavior.\n2. Apply only Knowledge-Base-supported techniques.\n3. Preserve all business logic, API contracts, routing, and integrations.\n4. Keep the code compilable.\n5. No new features, no removed functionality.\n6. Minimize unnecessary changes.\n7. Follow Clean Code, SOLID, and appropriate Design Patterns.\n8. If Previous Validation Feedback is present, directly fix the reported problem.\n\n\nReturn ONLY valid JSON, no markdown:\n{\n  \"file_path\": \"...\",\n  \"refactoring_summary\": [\"...\"],\n  \"applied_patterns\": [\"...\"],\n  \"modified_code\": \"complete refactored source code, full file\",\n  \"maintainability_improvements\": {\n    \"complexity_reduced\": \"...\",\n    \"readability_improved\": \"...\",\n    \"modularity_improved\": \"...\",\n    \"reusability_improved\": \"...\"\n  },\n  \"warnings\": [\"...\"]\n}\n\nCRITICAL: You MUST preserve every field, form step, validation rule, and UI element exactly as in the original. \nDo NOT summarize, omit, simplify, or replace any section with placeholder comments \n(e.g. \"implementation omitted for brevity\"). The output must be the COMPLETE file \nwith the same functional surface area as the original — only the flagged issues \nshould differ in implementation.",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        2720,
+        720
+      ],
+      "id": "928cd561-4e6f-4ac5-af3b-ecb74cbbae94",
+      "name": "Refactor Agent"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json.output ?? '';\n\nif (!raw) {\n  throw new Error('Output dari Refactor Agent kosong.');\n}\n\nlet data = raw;\n\nfor (let i = 0; i < 3; i++) {\n  if (typeof data !== 'string') break;\n  let text = data.trim();\n  text = text\n    .replace(/^```json\\s*/i, '')\n    .replace(/^```\\s*/i, '')\n    .replace(/\\s*```$/i, '')\n    .trim();\n  try {\n    data = JSON.parse(text);\n  } catch (e) {\n    break;\n  }\n}\n\nlet modifiedCode = '';\n\nif (data && typeof data === 'object' && typeof data.modified_code === 'string') {\n  modifiedCode = data.modified_code;\n}\n\nif (!modifiedCode) {\n  const text = typeof data === 'string' ? data : raw;\n  const markerRegex = /[\"\\\\]*modified_code[\"\\\\]*\\s*:\\s*\"/;\n  const match = markerRegex.exec(text);\n\n  if (match) {\n    const start = match.index + match[0].length;\n    let escaped = '';\n    let escapedChar = false;\n\n    for (let i = start; i < text.length; i++) {\n      const char = text[i];\n      if (escapedChar) {\n        escaped += '\\\\' + char;\n        escapedChar = false;\n        continue;\n      }\n      if (char === '\\\\') {\n        escapedChar = true;\n        continue;\n      }\n      if (char === '\"') break;\n      escaped += char;\n    }\n\n    try {\n      modifiedCode = JSON.parse(`\"${escaped}\"`);\n    } catch (e) {\n      modifiedCode = escaped\n        .replace(/\\\\n/g, '\\n')\n        .replace(/\\\\r/g, '\\r')\n        .replace(/\\\\t/g, '\\t')\n        .replace(/\\\\\"/g, '\"')\n        .replace(/\\\\\\\\/g, '\\\\');\n    }\n  }\n}\n\nif (!modifiedCode) {\n  throw new Error('modified_code tidak ditemukan pada output Refactor Agent.');\n}\n\n// FIX: kembalikan seluruh konteks (...ctx) DAN bungkus hasil sebagai refactor.modified_code\n// supaya kompatibel dengan semua node downstream (AST/Signature Diff, Validation Agent,\n// Mark Success, Build Retry Feedback, Prepare Original File Binary, dst.)\nconst ctx = $('Rebuild Full File Context').item.json;\n\nreturn [{\n  json: {\n    ...ctx,\n    refactor: { modified_code: modifiedCode }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2992,
+        720
+      ],
+      "id": "ff139ec8-66b0-4224-aa71-41cd65b2418f",
+      "name": "Parse Refactor Output"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "=/home/node/.n8n-files/YOURAPPS/candidates/{{$json.run_id}}_{{$json.file_path.replace(/\\//g,'__')}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        3344,
+        720
+      ],
+      "id": "bb51d272-c20a-495d-84cf-67100d07a74c",
+      "name": "Write Candidate To Temp"
+    },
+    {
+      "parameters": {
+        "command": "=npx --yes esbuild \"/home/node/.n8n-files/YOURAPPS/candidates/{{$json.run_id}}_{{$json.file_path.replace(/\\//g,'__')}}\" --bundle=false --format=esm --outfile=/dev/null 2>&1; echo EXITCODE:$?"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        3552,
+        720
+      ],
+      "id": "4ef00d0e-e98b-4a5d-94e7-c25c1d330657",
+      "name": "Syntax Check (tsc/eslint)"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Parse Refactor Output').item.json;\nconst out = $json.stdout || '';\nconst failed = /EXITCODE:(?!0)\\d/.test(out) || /error/i.test(out);\nreturn [{ json: { ...ctx, syntax_ok: !failed, syntax_output: out } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3760,
+        720
+      ],
+      "id": "ee5593e4-d3dc-43f2-becc-40bef1987366",
+      "name": "Evaluate Syntax Result"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$json.syntax_ok}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3920,
+        720
+      ],
+      "id": "8adfb090-b047-4ffc-b847-5200c8a94707",
+      "name": "IF Syntax Valid"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Deterministic structural check. Replace with ts-morph / @typescript-eslint/parser\n// for a real AST diff. This heuristic version checks exported symbols and duplicate\n// function declarations as a first line of defense.\nconst ctx = $json;\nconst original = ctx.source_code || '';\nconst candidate = (ctx.refactor && ctx.refactor.modified_code) || '';\nconst exportRegex = /export\\s+(default\\s+)?function\\s+([A-Za-z0-9_]+)/g;\nconst origExports = new Set([...original.matchAll(exportRegex)].map(m => m[2] || 'default'));\nconst newExports = new Set([...candidate.matchAll(exportRegex)].map(m => m[2] || 'default'));\nconst removed = [...origExports].filter(x => !newExports.has(x));\nconst funcNameRegex = /function\\s+([A-Za-z0-9_]+)\\s*\\(/g;\nconst names = [...candidate.matchAll(funcNameRegex)].map(m => m[1]);\nconst duplicates = names.filter((n, i) => names.indexOf(n) !== i);\nconst structurallyOk = removed.length === 0 && duplicates.length === 0 && candidate.trim().length > 0;\nreturn [{ json: { ...ctx, structural_ok: structurallyOk, removed_exports: removed, duplicate_functions: [...new Set(duplicates)] } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4160,
+        704
+      ],
+      "id": "df05e672-5f7f-4f68-8b7f-235ffbbf5e65",
+      "name": "AST/Signature Diff"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a Senior Software Verification Engineer. Judge whether the REFACTORED code preserves the exact functional behavior of the ORIGINAL code. Do not judge style; judge behavior.\n\nFile: {{$json.file_path}}\n\nORIGINAL CODE:\n{{$json.source_code}}\n\nREFACTORED CODE:\nn{{$json.refactor.modified_code}}\n\nRefactoring Summary claimed by the Refactor Agent:\n{{$json.refactor.refactoring_summary}}\n\nStructural Diff Result (deterministic, already computed):\nRemoved exports: {{$json.removed_exports}}\nDuplicate functions: {{$json.duplicate_functions}}\n\nTask: Compare business logic, conditionals, data mappings, side effects (API calls, state updates, validation rules) between the two versions. Flag ANY behavioral difference, however small.\n\nIMPORTANT: Return your response as a valid JSON object. DO NOT use markdown code blocks. DO NOT wrap in ```json```. Return ONLY the raw JSON object like this:\n\n{\n\"functionally_equivalent\":true,\"\nconfidence\":0.95,\n\"reasoning\":\"explanation here\",\n\"flagged_risks\":[]\n}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        4384,
+        704
+      ],
+      "id": "b492888e-7b2d-4fe8-b960-2dd907b0dbbb",
+      "name": "Validation Agent"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.1-flash-lite",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        4384,
+        912
+      ],
+      "id": "df71da46-9dec-4351-a756-1a33bde2d7bb",
+      "name": "Validation LLM",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "HDTXMXwnskmeosD8",
+          "name": "Gemini Api account mahasiswa"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('AST/Signature Diff').item.json;\nlet judged = {};\n\ntry {\n  let output = $json.output;\n\n  // Hapus markdown code block jika ada\n  if (output.includes('```json')) {\n    output = output.replace(/```json\\s*/g, '').replace(/```\\s*$/g, '');\n  } else if (output.includes('```')) {\n    output = output.replace(/```\\s*/g, '').replace(/```\\s*$/g, '');\n  }\n\n  judged = JSON.parse(output);\n} catch(e) {\n  judged = { functionally_equivalent: false, reasoning: 'parse_error: ' + e.message };\n}\n\nconst functionalOk = ctx.structural_ok && judged.functionally_equivalent === true;\nreturn [{ json: { ...ctx, functional_ok: functionalOk, validation_agent_result: judged } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4640,
+        704
+      ],
+      "id": "da2f15b1-fabe-4c5b-abf5-84e74f8e6e0f",
+      "name": "Evaluate Functional Result"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$json.functional_ok}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        4880,
+        704
+      ],
+      "id": "079fdf92-803d-4b19-bd31-ad874c0eafff",
+      "name": "IF Functional Preservation OK"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $json;\nconst reasons = [];\nif (ctx.syntax_ok === false) reasons.push('SYNTAX ERROR:\\n' + (ctx.syntax_output || ''));\nif (ctx.structural_ok === false) reasons.push('STRUCTURAL DIFF FAILED: removed exports=' + JSON.stringify(ctx.removed_exports) + ', duplicate functions=' + JSON.stringify(ctx.duplicate_functions));\nif (ctx.functional_ok === false && ctx.validation_agent_result) reasons.push('FUNCTIONAL EQUIVALENCE FAILED: ' + ctx.validation_agent_result.reasoning + ' Risks: ' + JSON.stringify(ctx.validation_agent_result.flagged_risks || []));\nif (ctx.maintainability_target_met === false) reasons.push(`MAINTAINABILITY TARGET NOT MET: complexity is ${ctx.new_metric_value}, target is <= ${ctx.target_metric_value}.`);\nconst retryCount = (ctx.retry_count || 0) + 1;\nreturn [{ json: {\n  file_path: ctx.file_path, run_id: ctx.run_id, source_code: ctx.source_code, issues: ctx.issues,\n  issues_analysis: ctx.issues_analysis, retry_count: retryCount,\n  feedback_prompt: reasons.join('\\n---\\n'),\n  last_candidate_code: (ctx.refactor && ctx.refactor.modified_code) || ''\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4880,
+        1024
+      ],
+      "id": "34de1623-85ed-482d-a530-0a1ee81c35de",
+      "name": "Build Retry Feedback"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$json.retry_count}}",
+              "rightValue": 3,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        5120,
+        1024
+      ],
+      "id": "97a482e6-e2ca-49a7-a96e-33d0eabdeb62",
+      "name": "IF Max Retries Reached"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "s1",
+              "name": "status",
+              "value": "MAX_RETRY_EXCEEDED",
+              "type": "string"
+            },
+            {
+              "id": "s2",
+              "name": "final_code",
+              "value": "={{$json.last_candidate_code}}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        5360,
+        1024
+      ],
+      "id": "fb0c4787-abaf-4b57-80a6-c6586db67e3c",
+      "name": "Mark Max Retry Exceeded"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "s1",
+              "name": "status",
+              "value": "SUCCESS",
+              "type": "string"
+            },
+            {
+              "id": "s2",
+              "name": "final_code",
+              "value": "={{$json.refactor.modified_code}}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        5360,
+        688
+      ],
+      "id": "a13de204-f428-42cf-b92c-9e77f94a39ef",
+      "name": "Mark Success"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "=/home/node/.n8n-files/YOURAPPS/{{$json.file_path}}.orig",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        5872,
+        816
+      ],
+      "id": "688937b1-96f0-46bd-9c88-ab9903715921",
+      "name": "Backup Original File"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "=/home/node/.n8n-files/YOURAPPS/{{$json.file_path}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        6352,
+        816
+      ],
+      "id": "b6e52152-a1b0-46e1-94cf-fb09ca070cac",
+      "name": "Write Final Refactored File"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: {\n  run_id: $json.run_id, file_path: $json.file_path, status: $json.status,\n  retry_attempts: $json.retry_count || 0,\n  baseline_metric_value: $json.baseline_metric_value, new_metric_value: $json.new_metric_value,\n  target_metric_value: $json.target_metric_value, complexity_reduction_pct: $json.complexity_reduction_pct,\n  applied_patterns: ($json.refactor && $json.refactor.applied_patterns) || [],\n  warnings: ($json.refactor && $json.refactor.warnings) || [],\n  logged_at: new Date().toISOString()\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6560,
+        816
+      ],
+      "id": "72d753f8-2312-4aee-9aca-ad59f3a9bfbd",
+      "name": "Log File Result Record"
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "file_records",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        80,
+        224
+      ],
+      "id": "ea8b1db4-0f35-4012-9bad-4b75d5f329d2",
+      "name": "Aggregate All File Records"
+    },
+    {
+      "parameters": {
+        "jsCode": "const records = $json.file_records || [];\nconst total = records.length;\nconst success = records.filter(r => r.status === 'SUCCESS').length;\nconst maxRetryExceeded = records.filter(r => r.status === 'MAX_RETRY_EXCEEDED').length;\nconst avgReduction = total ? records.reduce((s, r) => s + (r.complexity_reduction_pct || 0), 0) / total : 0;\nconst avgRetries = total ? records.reduce((s, r) => s + (r.retry_attempts || 0), 0) / total : 0;\nreturn [{ json: {\n  total_files: total, success_count: success, max_retry_exceeded_count: maxRetryExceeded,\n  success_rate_pct: total ? Math.round((success / total) * 100) : 0,\n  avg_complexity_reduction_pct: Math.round(avgReduction), avg_retry_attempts: Math.round(avgRetries * 100) / 100,\n  generated_at: new Date().toISOString(), records\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        224
+      ],
+      "id": "e760b174-7ed5-4e13-bcf6-be33c9054439",
+      "name": "Compute Framework Metrics"
+    },
+    {
+      "parameters": {
+        "jsCode": "const m = $json;\nconst header = 'file_path,status,retry_attempts,baseline_metric_value,new_metric_value,target_metric_value,complexity_reduction_pct\\n';\nconst rows = m.records.map(r => [r.file_path, r.status, r.retry_attempts, r.baseline_metric_value, r.new_metric_value, r.target_metric_value, r.complexity_reduction_pct].join(',')).join('\\n');\nconst csv = header + rows;\nreturn [{ json: { ...m }, binary: { data: { data: Buffer.from(csv).toString('base64'), mimeType: 'text/csv', fileName: 'evaluation_dataset.csv' } } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        224
+      ],
+      "id": "2ae772b9-90ec-4d99-aae9-3a619fc5635a",
+      "name": "Export Evaluation Dataset"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "=/home/node/.n8n-files/YOURAPPS/reports/{{$json.generated_at}}_evaluation_dataset.csv",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        800,
+        224
+      ],
+      "id": "a6fb7f0d-abee-48a9-9a25-f1280cf58a60",
+      "name": "Write Evaluation Dataset File"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a technical writer producing a short narrative summary for a thesis evaluation appendix. You are given ONLY pre-computed, already-verified metrics below. Do NOT invent, alter, or recompute any numbers -- restate them exactly as given and write connective, explanatory prose around them.\n\nMetrics:\n{{ JSON.stringify({total_files: $json.total_files, success_count: $json.success_count, max_retry_exceeded_count: $json.max_retry_exceeded_count, success_rate_pct: $json.success_rate_pct, avg_complexity_reduction_pct: $json.avg_complexity_reduction_pct, avg_retry_attempts: $json.avg_retry_attempts}) }}\n\nWrite 2-4 short paragraphs summarizing the run for inclusion in a research report. Return plain text only, no markdown headers.",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1040,
+        224
+      ],
+      "id": "2ca4de55-1c08-4718-a41b-13e80419f139",
+      "name": "Reporting Agent"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.1-flash-lite",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        1040,
+        416
+      ],
+      "id": "d03f31a0-2689-4a50-9934-3d5cd2c77597",
+      "name": "Reporting LLM",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "HDTXMXwnskmeosD8",
+          "name": "Gemini Api account mahasiswa"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const m = $('Compute Framework Metrics').item.json;\nconst narrative = $json.output || '';\nconst html = `<html><body><h1>Maintainability Framework Evaluation Report</h1>\\n<p>Generated: ${m.generated_at}</p>\\n<ul><li>Total files processed: ${m.total_files}</li><li>Successful (target met): ${m.success_count}</li><li>Max retry exceeded: ${m.max_retry_exceeded_count}</li><li>Success rate: ${m.success_rate_pct}%</li><li>Average complexity reduction: ${m.avg_complexity_reduction_pct}%</li><li>Average retry attempts: ${m.avg_retry_attempts}</li></ul>\\n<h2>Narrative Summary</h2><p>${narrative.replace(/\\n/g, '<br/>')}</p>\\n<h2>Per-file Records</h2><pre>${JSON.stringify(m.records, null, 2)}</pre>\\n</body></html>`;\nreturn [{ json: { generated_at: m.generated_at }, binary: { data: { data: Buffer.from(html).toString('base64'), mimeType: 'text/html', fileName: 'evaluation_report.html' } } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        224
+      ],
+      "id": "ec4b6184-bce1-4d68-9cc7-37b11950b01a",
+      "name": "Generate Evaluation Report"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "=/home/node/.n8n-files/YOURAPPS/reports/{{$json.generated_at}}_evaluation_report.html",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        1520,
+        224
+      ],
+      "id": "367c5634-bd85-4aeb-b7bb-d8cb3fdb7764",
+      "name": "Write Evaluation Report File"
+    },
+    {
+      "parameters": {
+        "content": "### STAGE 0 - Ingestion (deterministic)\nParses SonarQube JSON, assigns run_id/issue_id, and groups issues BY FILE so refactoring happens once per file (fixes the original race condition).",
+        "height": 200,
+        "width": 900,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1584,
+        224
+      ],
+      "id": "179f1e31-bed4-47ff-992c-e169c0bd5199",
+      "name": "Sticky - Stage0"
+    },
+    {
+      "parameters": {
+        "content": "### STAGE 1 - Per-file loop\nSplitInBatches(size=1) processes one file at a time. Issues are analyzed via SplitOut -> Analyzer -> RAG -> keyed record -> Aggregate back, then the WHOLE file is refactored in one Refactor Agent call addressing all its issues together.",
+        "width": 1200,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        96,
+        528
+      ],
+      "id": "d9b294ac-bc9a-42d6-b173-a5c6414aacb5",
+      "name": "Sticky - Stage1"
+    },
+    {
+      "parameters": {
+        "content": "### STAGE 2 - Validation Gate\n3 layers: (1) Syntax/compile check, (2) Structural diff + Validation Agent (LLM judge) for functional preservation, (3) SonarQube re-scan + delta for maintainability target. ANY failure routes to 'Build Retry Feedback' -> loop back to Refactor Agent, bounded by MAX_RETRIES=3.\n\nCUSTOMIZE: 'Syntax Check' command, 'SonarQube Rescan' command/API, and 'Compute Maintainability Delta' parsing for YOUR project/toolchain before running.",
+        "height": 220,
+        "width": 2700,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        3200,
+        416
+      ],
+      "id": "39ed8411-5774-469b-b929-6613108f9671",
+      "name": "Sticky - Stage2"
+    },
+    {
+      "parameters": {
+        "content": "### STAGE 3 - Persistence\nBackup original -> write final refactored file -> log a structured record per file -> loop continues to next file via 'Loop Over Files'.",
+        "width": 1000,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        6112,
+        464
+      ],
+      "id": "e87b6243-76c3-4823-8fb4-0936b1050e1a",
+      "name": "Sticky - Stage3"
+    },
+    {
+      "parameters": {
+        "content": "### STAGE 4 - Evaluation & Reporting\nFires once when 'Loop Over Files' emits its DONE output (all files processed). Produces a CSV dataset (for statistical analysis) and an HTML report (numbers are deterministic; only the narrative paragraph is LLM-generated, fed pre-computed metrics as read-only context).",
+        "height": 200,
+        "width": 1700,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        768,
+        -48
+      ],
+      "id": "40bf5140-cb4b-405d-abc5-00d9c0c5ce57",
+      "name": "Sticky - Stage4"
+    },
+    {
+      "parameters": {
+        "content": "IMPORTANT: verify the output port order of 'Loop Over Files' (Split In Batches) in your n8n version -- it differs across versions (loop vs done can be index 0 or 1). This file assumes output 0 = done, output 1 = loop. Swap the two connections below the node if your version differs.",
+        "height": 220,
+        "width": 900,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -192,
+        -48
+      ],
+      "id": "90a59cd5-de5a-4656-8882-705db31c5973",
+      "name": "Sticky - LoopPorts"
+    },
+    {
+      "parameters": {
+        "jsCode": "const code = $json.refactor.modified_code;   // bukan lagi $json.modified_code\n\nconst parts = ($json.file_path || '').split('.');\nconst ext = parts.length > 1 ? parts.pop() : 'txt';\n\nreturn [{\n  json: $json,\n  binary: {\n    data: await this.helpers.prepareBinaryData(\n      Buffer.from(code, \"utf8\"),\n      `candidate.${ext}`\n    )\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3152,
+        720
+      ],
+      "id": "207021fc-2175-401a-bd31-85e98e82dc0c",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Sebelum \"Backup Original File\" — convert source_code asli ke binary\nreturn [{\n  json: $json,\n  binary: { data: await this.helpers.prepareBinaryData(Buffer.from($json.source_code, \"utf8\"), $json.file_path.split('/').pop()) }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5648,
+        816
+      ],
+      "id": "f056624d-cea9-49d9-9a27-17b3d4193f9a",
+      "name": "Prepare Original File Binary"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Sebelum \"Write Final Refactored File\" — convert final_code ke binary\nconst ext = $json.file_path.split('.').pop();\nreturn [{\n  json: $json,\n  binary: { data: await this.helpers.prepareBinaryData(Buffer.from($json.final_code, \"utf8\"), $json.file_path.split('/').pop()) }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6096,
+        816
+      ],
+      "id": "49aad193-f3ad-4f5a-879c-1f9d4ed4996f",
+      "name": "Prepare Final Refactored Code"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.5-flash-lite",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        1760,
+        896
+      ],
+      "id": "adf6ff93-fd7a-4bd1-983d-27dd29239573",
+      "name": "RAG LLM",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "HDTXMXwnskmeosD8",
+          "name": "Gemini Api account mahasiswa"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.5-flash-lite",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        1520,
+        896
+      ],
+      "id": "e0a0dcfb-eb96-40eb-9a9f-0ab4ce43482a",
+      "name": "Analyzer LLM",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "HDTXMXwnskmeosD8",
+          "name": "Gemini Api account mahasiswa"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "claude-opus-5",
+          "mode": "list"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.5,
+      "position": [
+        2720,
+        912
+      ],
+      "id": "cb57c772-bfbd-437a-9a0a-06079fdee320",
+      "name": "Refactor LLM",
+      "credentials": {
+        "anthropicApi": {
+          "id": "yHZPe8aKG2Cf2Byp",
+          "name": "Anthropic account subs"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "On SonarQube JSON Submission": {
+      "main": [
+        [
+          {
+            "node": "Extract SonarQube JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract SonarQube JSON": {
+      "main": [
+        [
+          {
+            "node": "Assign Run ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assign Run ID": {
+      "main": [
+        [
+          {
+            "node": "Split Out Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out Issues": {
+      "main": [
+        [
+          {
+            "node": "Assign Issue ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assign Issue ID": {
+      "main": [
+        [
+          {
+            "node": "Group Issues By File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Group Issues By File": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Files": {
+      "main": [
+        [
+          {
+            "node": "Aggregate All File Records",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Read Source File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Source File": {
+      "main": [
+        [
+          {
+            "node": "Extract Source Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Source Text": {
+      "main": [
+        [
+          {
+            "node": "Parse Source Lines",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Source Lines": {
+      "main": [
+        [
+          {
+            "node": "Prepare File Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare File Context": {
+      "main": [
+        [
+          {
+            "node": "Split Out Issues For Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out Issues For Analysis": {
+      "main": [
+        [
+          {
+            "node": "Build Context Window",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Context Window": {
+      "main": [
+        [
+          {
+            "node": "Analyzer Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyzer Agent": {
+      "main": [
+        [
+          {
+            "node": "RAG Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RAG Agent": {
+      "main": [
+        [
+          {
+            "node": "Attach Issue Analysis Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qdrant Vector Retrieve": {
+      "ai_tool": [
+        [
+          {
+            "node": "RAG Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Google Gemini": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Qdrant Vector Retrieve",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach Issue Analysis Record": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Issues Analysis For File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Issues Analysis For File": {
+      "main": [
+        [
+          {
+            "node": "Rebuild Full File Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rebuild Full File Context": {
+      "main": [
+        [
+          {
+            "node": "Refactor Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Refactor Agent": {
+      "main": [
+        [
+          {
+            "node": "Parse Refactor Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Refactor Output": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Candidate To Temp": {
+      "main": [
+        [
+          {
+            "node": "Syntax Check (tsc/eslint)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Syntax Check (tsc/eslint)": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Syntax Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Syntax Result": {
+      "main": [
+        [
+          {
+            "node": "IF Syntax Valid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Syntax Valid": {
+      "main": [
+        [
+          {
+            "node": "AST/Signature Diff",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Retry Feedback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AST/Signature Diff": {
+      "main": [
+        [
+          {
+            "node": "Validation Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validation Agent": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Functional Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validation LLM": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Validation Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Functional Result": {
+      "main": [
+        [
+          {
+            "node": "IF Functional Preservation OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Functional Preservation OK": {
+      "main": [
+        [
+          {
+            "node": "Mark Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Retry Feedback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Retry Feedback": {
+      "main": [
+        [
+          {
+            "node": "IF Max Retries Reached",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Max Retries Reached": {
+      "main": [
+        [
+          {
+            "node": "Refactor Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Max Retry Exceeded",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Max Retry Exceeded": {
+      "main": [
+        [
+          {
+            "node": "Prepare Original File Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Success": {
+      "main": [
+        [
+          {
+            "node": "Prepare Original File Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Backup Original File": {
+      "main": [
+        [
+          {
+            "node": "Prepare Final Refactored Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Final Refactored File": {
+      "main": [
+        [
+          {
+            "node": "Log File Result Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log File Result Record": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate All File Records": {
+      "main": [
+        [
+          {
+            "node": "Compute Framework Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Framework Metrics": {
+      "main": [
+        [
+          {
+            "node": "Export Evaluation Dataset",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Export Evaluation Dataset": {
+      "main": [
+        [
+          {
+            "node": "Write Evaluation Dataset File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Evaluation Dataset File": {
+      "main": [
+        [
+          {
+            "node": "Reporting Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reporting Agent": {
+      "main": [
+        [
+          {
+            "node": "Generate Evaluation Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reporting LLM": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Reporting Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Evaluation Report": {
+      "main": [
+        [
+          {
+            "node": "Write Evaluation Report File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Write Candidate To Temp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Original File Binary": {
+      "main": [
+        [
+          {
+            "node": "Backup Original File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Final Refactored Code": {
+      "main": [
+        [
+          {
+            "node": "Write Final Refactored File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RAG LLM": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "RAG Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyzer LLM": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Analyzer Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Refactor LLM": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Refactor Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {
+    "Analyzer Agent": [
+      {
+        "output": "{\n  \"issue_id\": \"_execution_id_____run___app_client_user_form-pendaftaran_page_tsx_typescript_S3776_0\",\n  \"file_path\": \"_run/app/client/user/form-pendaftaran/page.tsx\",\n  \"rule\": \"typescript:S3776\",\n  \"severity\": \"CRITICAL\",\n  \"issue_type\": \"CODE_SMELL\",\n  \"root_cause\": [\n    \"The function 'RegistrationForm' exceeds the maximum allowed cognitive complexity threshold of 15, measuring at 43.\",\n    \"Excessive nesting, conditional branches, or control flow structures within the main component function or its internal helpers.\"\n  ],\n  \"maintainability_impact\": \"High cognitive complexity severely degrades code readability and comprehension, making the component difficult for developers to understand, debug, and modify safely. It increases the likelihood of introducing defects during maintenance.\",\n  \"affected_iso25010_characteristics\": [\n    \"Analyzability\",\n    \"Modifiability\",\n    \"Testability\"\n  ],\n  \"repair_priority\": \"High\",\n  \"analysis_summary\": \"SonarQube flagged a CRITICAL code smell (typescript:S3776) on the 'RegistrationForm' function starting at line 28 due to an unacceptable cognitive complexity of 43 against a limit of 15. This heavily impacts maintainability sub-characteristics like analyzability and modifiability.\",\n  \"retrieval_keywords\": [\n    \"typescript:S3776\",\n    \"Cognitive Complexity\",\n    \"RegistrationForm\",\n    \"Code Smell\",\n    \"CRITICAL\",\n    \"ISO/IEC 25010\",\n    \"Maintainability\"\n  ]\n}"
+      },
+      {
+        "output": "{\n  \"issue_id\": \"_execution_id_____run___app_client_user_form-pendaftaran_page_tsx_typescript_S7781_1\",\n  \"file_path\": \"_execution_id_____run___app_client_user_form-pendaftaran_page_tsx_typescript_S7781_page.tsx\",\n  \"rule\": \"typescript:S7781\",\n  \"severity\": \"MINOR\",\n  \"issue_type\": \"CODE_SMELL\",\n  \"root_cause\": [\n    \"Usage of `String#replace()` with a global regular expression (`/\\./g`) instead of the modern `String#replaceAll()` method on line 59.\"\n  ],\n  \"maintainability_impact\": \"Using `String#replace()` with a global regex for literal string replacement is less readable and modern than `String#replaceAll()`, negatively impacting code maintainability and analyzability.\",\n  \"affected_iso25010_characteristics\": [\n    \"Maintainability\",\n    \"Analysability\",\n    \"Modifiability\"\n  ],\n  \"repair_priority\": \"Low\",\n  \"analysis_summary\": \"SonarQube identified a minor code smell on line 59 of the registration form page where `String#replace()` is used with a global regex to sanitize a payment amount string. Modern JavaScript/TypeScript practices prefer `String#replaceAll()` for global string replacements to improve clarity and maintainability.\",\n  \"retrieval_keywords\": [\n    \"typescript:S7781\",\n    \"String#replace\",\n    \"String#replaceAll\",\n    \"code smell\",\n    \"regular expression\",\n    \"PAYMENT_CONFIG\"\n  ]\n}"
+      }
+    ],
+    "RAG Agent": [
+      {
+        "output": "{\n  \"issue_id\": \"_execution_id_____run___app_client_user_form-pendaftaran_page_tsx_typescript_S3776_0\",\n  \"file_path\": \"_run/app/client/user/form-pendaftaran/page.tsx\",\n  \"retrieval_query\": \"typescript:S3776 Cognitive Complexity RegistrationForm Code Smell CRITICAL ISO/IEC 25010 Maintainability\",\n  \"retrieved_topics\": [\n    \"Cognitive Complexity metric and reduction techniques\",\n    \"Nested ternary operators reduce readability\",\n    \"Open/Closed Principle\",\n    \"Guard Clause and Strategy-via-Lookup-Map patterns\"\n  ],\n  \"retrieved_knowledge\": [\n    {\n      \"source\": \"blob\",\n      \"topic\": \"Cognitive Complexity metric and reduction techniques\",\n      \"content\": \"\\\"Cognitive Complexity metric and reduction techniques\\\\n\\\\nCognitive Complexity (introduced by SonarSource, distinct from Cyclomatic Complexity) measures how difficult a\\\\nunit of code is for a human to read and understand, by penalizing structures that break the linear flow of\\\\nreading: nesting (each level of nesting inside another control structure adds extra weight), and control-flow\\\\nbreaks (if/else if/else, switch, for, while, catch, &&/||, recursion, goto-like jumps). Cyclomatic Complexity\\\\ncounts paths through code; Cognitive Complexity specifically penalizes nesting because deeply nested logic is\\\\nproven harder for humans to trace mentally, even when the raw number of branches is the same. Standard reduction\\\\ntechniques, all safe to apply without changing behavior: (a) Extract Function/Method - pull a nested block into a\\\\nwell-named helper function, which \\\\\\\"resets\\\\\\\" nesting depth for the reader; (b) Guard Clauses / Early Return - replace\\\\n`if (cond) { ...big block... }` with `if (!cond) return;` followed by the flattened logic; (c) Replace Nested\\\\nConditional with Lookup Map/Table - when a chain of if/else-if maps discrete values to outcomes, a plain object or\\\\nMap lookup removes the branching entirely; (d) Decompose Conditional - extract a complex boolean expression into a\\\\nnamed predicate function/variable; (e) Consolidate Duplicate Conditional Fragments - merge branches that do the\\\\nsame thing regardless of condition. For React components specifically, extracting a large render method's\\\\nconditional JSX into small local sub-components, or extracting stateful logic into local custom hooks, achieves\\\\nthe same complexity reduction while keeping everything in a single file/module when required.\\\"\"\n    },\n    {\n      \"source\": \"blob\",\n      \"topic\": \"Nested ternary operators reduce readability\",\n      \"content\": \"\\\"Nested ternary operators reduce readability\\\\n\\\\nA ternary expression nested inside another ternary's consequent or alternate branch (`a ? b ? c : d : e`) forces a\\\\nreader to parse multiple levels of conditional precedence simultaneously, which is a well-documented readability\\\\nregression compared to an equivalent if/else chain or extracted function. This is especially common in JSX where\\\\ndevelopers chain ternaries to conditionally render different UI states. Refactor options, in order of preference:\\\\n(1) extract the nested ternary into a small named function or local variable computed before the JSX return, so\\\\nthe JSX itself only references a single flat value; (2) if the ternary selects between more than two discrete UI\\\\nstates, replace it with a lookup map keyed by the discriminant (see Strategy-via-Lookup-Map) or an early-return\\\\npattern at the top of the component/sub-component; (3) if it is a simple two-branch case, a single non-nested\\\\nternary or a plain if/else is sufficient. The goal is that each conditional expression a reader encounters has at\\\\nmost one decision point.\\\"\"\n    },\n    {\n      \"source\": \"blob\",\n      \"topic\": \"Open/Closed Principle\",\n      \"content\": \"\\\"Open/Closed Principle\\\\n\\\\nThe Open/Closed Principle states that a module should be open for extension but closed for modification: adding\\\\nnew behavior should be possible without editing existing, already-tested code. In practice this shows up as a\\\\nwarning sign whenever adding a new case requires editing an existing if/else-if or switch chain that already has\\\\nmany branches for similar cases (e.g. a growing chain that maps a status/type string to a label, an icon, or a\\\\nhandler function). The typical fix is to replace the growing conditional with a lookup structure (object/Map) or a\\\\nsmall strategy/handler registry keyed by the discriminant value, so that adding a new case means adding a new\\\\nentry to the map/registry rather than editing a function's control flow. This keeps the existing, already-verified\\\\nbranches untouched when new variants are introduced, reducing regression risk and directly supporting\\\\nModifiability under ISO/IEC 25010.\\\"\"\n    },\n    {\n      \"source\": \"blob\",\n      \"topic\": \"Guard Clause and Strategy-via-Lookup-Map patterns\",\n      \"content\": \"\\\"Guard Clause and Strategy-via-Lookup-Map patterns\\\\n\\\\nTwo lightweight patterns are the most broadly applicable, low-risk refactors for reducing branching/nesting\\\\nwithout changing behavior: (1) Guard Clause - invert a wrapping condition and return/continue early, eliminating\\\\none level of nesting for the remaining logic; best used when a function first validates preconditions before doing\\\\nits main work. (2) Strategy-via-Lookup-Map - when branching exists purely to select one of several fixed outcomes\\\\nbased on a discriminant value (a status string, a type enum, a role), replace the if/else-if or switch chain (or a\\\\nnested ternary used for the same purpose) with a plain object/Map keyed by the discriminant, e.g.\\\\n`const LABELS = { paid: 'Lunas', pending: 'Menunggu', failed: 'Gagal' }; const label = LABELS[status] ?? 'Unknown';`.\\\\nThis removes branching complexity entirely, is trivially extensible (add a key, not a branch), and is easier to\\\\nunit test in isolation from the surrounding function.\\\"\"\n    }\n  ],\n  \"knowledge_summary\": \"The retrieved knowledge covers Cognitive Complexity metrics and safe reduction techniques, including Extract Function/Method, Guard Clauses/Early Returns, Replace Nested Conditional with Lookup Maps, Decompose Conditional, and extracting conditional JSX or sub-components in React components. Additionally, it highlights best practices for removing nested ternary operators and adhering to the Open/Closed Principle to improve analyzability, modifiability, and testability.\",\n  \"confidence\": \"1.0\"\n}"
+      },
+      {
+        "output": "{\n  \"issue_id\": \"_execution_id_____run___app_client_user_form-pendaftaran_page_tsx_typescript_S7781_1\",\n  \"file_path\": \"_execution_id_____run___app_client_user_form-pendaftaran_page_tsx_typescript_S7781_page.tsx\",\n  \"retrieval_query\": \"typescript:S7781 String#replace String#replaceAll regular expression code smell\",\n  \"retrieved_topics\": [\n    \"Array and string API modernization (ES2019+)\"\n  ],\n  \"retrieved_knowledge\": [\n    {\n      \"source\": \"blob\",\n      \"topic\": \"Array and string API modernization (ES2019+)\",\n      \"content\": \"S7781 - repeated/looped String#replace() calls used to replace all occurrences of a substring should be replaced with String#replaceAll(), which expresses \\\"replace every occurrence\\\" directly instead of relying on a global regex flag or a loop.\"\n    }\n  ],\n  \"knowledge_summary\": \"SonarQube rule S7781 pertains to string API modernization (ES2019+). It recommends replacing `String#replace()` calls that use a global regular expression or loop to replace all occurrences of a substring with the modern `String#replaceAll()` method. This expresses the intent to \\\"replace every occurrence\\\" directly, improving readability, conciseness, and maintainability without altering runtime behavior.\",\n  \"confidence\": \"High\"\n}"
+      }
+    ]
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "6f768ee046dab6479ea306885b585ec6eb1ecad317bd42f9d743cbbc04869a7d"
+  }
+}

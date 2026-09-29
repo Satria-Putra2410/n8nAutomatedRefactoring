@@ -1,0 +1,15 @@
+# Environment variables
+.env
+
+# n8n data
+.n8n/
+
+# Docker
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/

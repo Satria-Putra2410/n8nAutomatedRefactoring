@@ -1,0 +1,711 @@
+{
+  "name": "Knowledge Base Ingestion - Qdrant",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        256,
+        1664
+      ],
+      "id": "7a17dfd1-7ce6-4f3b-bf3d-a42b30e0ee3e",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "command": "find /home/node/.n8n-files/Knowledge_base -type f \\(  -name \"refactoring-cheat-sheet.pdf\" -o -name \"sonarqube_rule_metadata.json\" -o -name \"sonarqube_issue_metadata.jsonl\" \\) -print"
+      },
+      "id": "8792cd64-37ff-484c-bcd2-d99edec58c85",
+      "name": "Execute Command",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        496,
+        1664
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const stdout = $input.first().json.stdout || '';\n\nconst files = stdout\n  .split(/\\r?\\n/)\n  .map(file => file.trim())\n  .filter(Boolean);\n\nreturn files.map(file => ({\n  json: {\n    path: file,\n    source_path: file,\n    extension: file.toLowerCase().split('.').pop(),\n    file_name: file.split('/').pop()\n  }\n}));\n"
+      },
+      "id": "19d53964-691d-47f7-8112-4b55556a859a",
+      "name": "Code in JavaScript",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        1664
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "ac1d2d1a-9364-4b95-8672-77ce4580d5b8",
+                    "leftValue": "={{ $json.extension }}",
+                    "rightValue": "pdf",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "PDF"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "3c9d8593-411e-474a-b654-a680861d58d9",
+                    "leftValue": "={{ $json.extension }}",
+                    "rightValue": "json",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "JSON"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "4b5e1265-353e-4185-9720-4dcab5f4cab6",
+                    "leftValue": "={{ $json.extension }}",
+                    "rightValue": "jsonl",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "JSONL"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "64f11e5e-aaad-4da6-9a3e-cd0abbf376c0",
+      "name": "Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        944,
+        1632
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "8aea8028-abc1-477f-9553-5f5ecb91d207",
+              "name": "source_path",
+              "value": "={{ $json.source_path }}",
+              "type": "string"
+            },
+            {
+              "id": "28661699-b774-4e34-b18c-13d5c0793a1f",
+              "name": "file_name",
+              "value": "={{ $json.file_name }}",
+              "type": "string"
+            },
+            {
+              "id": "73eddebf-e654-405a-83ec-32242ba2eb0c",
+              "name": "extension",
+              "value": "={{ $json.extension }}",
+              "type": "string"
+            },
+            {
+              "id": "0c43ddb8-e2e4-4267-a002-bca289d92e0e",
+              "name": "document_kind",
+              "value": "pdf",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "33cd4b77-83c5-407a-85d5-5f63d250e97b",
+      "name": "Set PDF Metadata",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1152,
+        1456
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "231c579d-3f5d-43fc-add1-6159fe736050",
+              "name": "source_path",
+              "value": "={{ $json.source_path }}",
+              "type": "string"
+            },
+            {
+              "id": "59e0552a-e822-48be-b018-f5385c123f7e",
+              "name": "file_name",
+              "value": "={{ $json.file_name }}",
+              "type": "string"
+            },
+            {
+              "id": "a0864629-c660-486b-9960-12c96c4322a3",
+              "name": "extension",
+              "value": "={{ $json.extension }}",
+              "type": "string"
+            },
+            {
+              "id": "ba8264d0-7e60-4a10-9f44-de4dc6990460",
+              "name": "document_kind",
+              "value": "json",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "3cd3e984-084e-4463-b998-8590b84fb687",
+      "name": "Set JSON Metadata",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1152,
+        1648
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d0048960-0c16-4789-b6f3-4597d2f0e4b2",
+              "name": "source_path",
+              "value": "={{ $json.source_path }}",
+              "type": "string"
+            },
+            {
+              "id": "3dd27e6f-1836-413b-a110-178a127824f1",
+              "name": "file_name",
+              "value": "={{ $json.file_name }}",
+              "type": "string"
+            },
+            {
+              "id": "1ad008ff-ad88-47a2-9b76-03aa853fc489",
+              "name": "extension",
+              "value": "={{ $json.extension }}",
+              "type": "string"
+            },
+            {
+              "id": "9fbe9c1d-33b9-46cc-b0a5-43c6a13ab7b5",
+              "name": "document_kind",
+              "value": "jsonl",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "1c15c2c5-d376-4d24-b5b6-44735030b47c",
+      "name": "Set JSONL Metadata",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1152,
+        1840
+      ]
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ $json.source_path }}",
+        "options": {
+          "dataPropertyName": "data"
+        }
+      },
+      "id": "ff1afac5-7795-4a35-9231-afe15085d624",
+      "name": "Read PDF File",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        1376,
+        1456
+      ]
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ $json.source_path }}",
+        "options": {
+          "dataPropertyName": "data"
+        }
+      },
+      "id": "b9aad176-93a6-443e-bc9c-71f01a03c184",
+      "name": "Read JSON File",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        1376,
+        1648
+      ]
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ $json.source_path }}",
+        "options": {
+          "dataPropertyName": "data"
+        }
+      },
+      "id": "30957bc5-29f0-42c2-b096-600e163a7bf6",
+      "name": "Read JSONL File",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        1376,
+        1840
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "=data",
+        "options": {}
+      },
+      "id": "161cbded-8ec4-4499-b8f3-f7cd77423c16",
+      "name": "Extract From PDF",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        1600,
+        1456
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "fromJson",
+        "options": {}
+      },
+      "id": "cd5a406d-5947-4480-ae29-04eb34108f3e",
+      "name": "Extract From JSON",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        1600,
+        1648
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "text",
+        "options": {}
+      },
+      "id": "001110a8-4813-4028-87e6-20344b0df2c7",
+      "name": "Extract From JSONL (as text)",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        1600,
+        1840
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.all();\nconst output = [];\n\nfunction addDocument(data) {\n  if (!data.content || !String(data.content).trim()) {\n    return;\n  }\n\n  output.push({\n    json: {\n      id: data.id || `document-${output.length + 1}`,\n      topic: data.topic || 'Software Engineering Reference',\n      content: String(data.content),\n\n      source: data.source || 'Knowledge Base',\n      document_type: data.document_type || 'reference',\n      language: data.language || 'general',\n      domain: data.domain || 'software-engineering',\n\n      category: data.category || '',\n      rule: data.rule || '',\n      related_sonar_rules: data.related_sonar_rules || [],\n      severity: data.severity || [],\n      issue_type: data.issue_type || [],\n      keywords: data.keywords || [],\n\n      file_path: data.file_path || '',\n      line: data.line || ''\n    }\n  });\n}\n\nfunction getText(json) {\n  const values = [\n    json.text,\n    json.content,\n    json.extractedText,\n    json.extracted_text,\n    json.data\n  ];\n\n  for (const value of values) {\n    if (typeof value === 'string' && value.trim()) {\n      return value;\n    }\n  }\n\n  return '';\n}\n\nfunction getFileName(item) {\n  const json = item.json || {};\n  const binary = item.binary?.data || {};\n\n  return (\n    json.file_name ||\n    json.fileName ||\n    json.source_path?.split('/').pop() ||\n    json.path?.split('/').pop() ||\n    binary.fileName ||\n    ''\n  ).toLowerCase();\n}\n\nfunction parseJsonLines(text) {\n  return String(text)\n    .split(/\\r?\\n/)\n    .map(line => line.trim())\n    .filter(Boolean)\n    .map(line => {\n      try {\n        return JSON.parse(line);\n      } catch {\n        return null;\n      }\n    })\n    .filter(Boolean);\n}\n\nfor (const item of input) {\n  const json = item.json || {};\n  const fileName = getFileName(item);\n  const text = getText(json);\n\n  /*\n   * 1. sonarqube_rule_metadata.json\n   *\n   * Deteksi berdasarkan struktur JSON, bukan nama file.\n   */\n  const rules =\n    Array.isArray(json.rules)\n      ? json.rules\n      : Array.isArray(json.data?.rules)\n        ? json.data.rules\n        : null;\n\n  if (rules) {\n    for (const rule of rules) {\n      const severity = Object.keys(rule.severity_counts || {});\n      const issueType = Object.keys(rule.type_counts || {});\n\n      const content = [\n        `SonarQube rule: ${rule.rule || ''}`,\n        `Category: ${rule.category || ''}`,\n        `Description: ${rule.description || ''}`,\n        `Remediation: ${rule.remediation || ''}`,\n        `Occurrences: ${rule.occurrences || 0}`,\n        `Severity: ${severity.join(', ')}`,\n        `Issue type: ${issueType.join(', ')}`,\n        `Keywords: ${(rule.keywords || []).join(', ')}`,\n        `Recommended sources: ${(rule.recommended_sources || []).join(', ')}`\n      ].join('\\n');\n\n      addDocument({\n        id: `rule-${String(rule.rule || output.length)\n          .replace(/[^a-zA-Z0-9]+/g, '-')}`,\n\n        topic: `${rule.rule || 'SonarQube Rule'} - ${rule.category || ''}`,\n        content,\n\n        source: 'SonarQube Rule Metadata',\n        document_type: 'rule-guidance',\n        language: rule.language || 'typescript',\n        domain: 'static-analysis',\n\n        category: rule.category || '',\n        rule: rule.rule || '',\n        related_sonar_rules: rule.rule ? [rule.rule] : [],\n        severity,\n        issue_type: issueType,\n        keywords: rule.keywords || []\n      });\n    }\n\n    continue;\n  }\n\n  /*\n   * 2. JSONL SonarQube issue metadata\n   *\n   * Deteksi dari isi teks.\n   */\n  if (\n    fileName.endsWith('.jsonl') ||\n    (\n      text &&\n      text.trim().startsWith('{') &&\n      text.includes('\"issue_id\"') &&\n      text.includes('\"rule\"')\n    )\n  ) {\n    const records = parseJsonLines(text);\n\n    if (records.length > 0) {\n      for (const issue of records) {\n        if (!issue.rule && !issue.message) {\n          continue;\n        }\n\n        const content = [\n          `SonarQube issue: ${issue.issue_id || ''}`,\n          `Rule: ${issue.rule || ''}`,\n          `File: ${issue.file_path || ''}`,\n          `Severity: ${issue.severity || ''}`,\n          `Type: ${issue.type || ''}`,\n          `Message: ${issue.message || ''}`,\n          `Line: ${issue.line || ''}`,\n          `Category: ${issue.category || ''}`,\n          `Keywords: ${(issue.keywords || []).join(', ')}`,\n          `Recommended sources: ${(issue.recommended_sources || []).join(', ')}`\n        ].join('\\n');\n\n        addDocument({\n          id: issue.issue_id || `issue-${output.length + 1}`,\n          topic: `${issue.rule || 'SonarQube Issue'} - ${issue.category || ''}`,\n          content,\n\n          source: 'SonarQube Issue Metadata',\n          document_type: 'sonarqube-issue',\n          language: 'typescript',\n          domain: 'static-analysis',\n\n          category: issue.category || '',\n          rule: issue.rule || '',\n          related_sonar_rules: issue.rule ? [issue.rule] : [],\n          severity: issue.severity ? [issue.severity] : [],\n          issue_type: issue.type ? [issue.type] : [],\n          keywords: issue.keywords || [],\n          file_path: issue.file_path || '',\n          line: issue.line || ''\n        });\n      }\n\n      continue;\n    }\n  }\n\n  /*\n   * 3. Dokumen PDF atau Markdown\n   *\n   * Jika nama file hilang, teks biasa tetap diproses sebagai dokumen.\n   */\n  if (text.trim()) {\n    let source = 'Knowledge Base Reference';\n    let documentType = 'reference';\n\n    if (fileName.includes('clean')) {\n      source = 'Clean Code';\n      documentType = 'book';\n    } else if (fileName.includes('pressman')) {\n      source = 'Software Engineering';\n      documentType = 'book';\n    } else if (fileName.includes('solid')) {\n      source = 'SOLID Design Principles';\n      documentType = 'article';\n    } else if (fileName.includes('refactoring')) {\n      source = 'Refactoring Cheat Sheet';\n      documentType = 'refactoring-reference';\n    } else if (fileName.endsWith('.pdf')) {\n      source = 'PDF Reference';\n      documentType = 'pdf-reference';\n    } else if (fileName.endsWith('.md')) {\n      source = 'Markdown Reference';\n      documentType = 'markdown-reference';\n    }\n\n    addDocument({\n      id: `doc-${source.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${output.length + 1}`,\n      topic: source,\n      content: text,\n\n      source,\n      document_type: documentType,\n      language: 'general',\n      domain: 'software-engineering',\n\n      category: 'software engineering',\n      related_sonar_rules: [],\n      severity: [],\n      issue_type: [],\n      keywords: [\n        'software engineering',\n        'software quality',\n        'clean code',\n        'maintainability'\n      ]\n    });\n\n    continue;\n  }\n\n  /*\n   * 4. Diagnostic apabila item tetap tidak memiliki teks\n   */\n  const availableFields = Object.keys(json);\n\n  if (availableFields.length > 0) {\n    output.push({\n      json: {\n        id: `diagnostic-${output.length + 1}`,\n        topic: 'Extraction Diagnostic',\n        content: `Tidak menemukan teks. Field yang tersedia: ${availableFields.join(', ')}`,\n        source: 'Workflow Diagnostic',\n        document_type: 'diagnostic',\n        language: 'general',\n        domain: 'debugging',\n        category: 'diagnostic',\n        related_sonar_rules: [],\n        severity: [],\n        issue_type: [],\n        keywords: availableFields\n      }\n    });\n  }\n}\n\nreturn output;"
+      },
+      "id": "c62107d0-bc38-45d6-9dd7-abafbc8632d7",
+      "name": "Normalize Documents",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1840,
+        1632
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "chunkSize": 2000,
+        "chunkOverlap": 200,
+        "options": {}
+      },
+      "id": "b2eabcf9-b5bc-4028-a0e9-697e75eded2a",
+      "name": "Recursive Character Text Splitter",
+      "type": "@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter",
+      "typeVersion": 1,
+      "position": [
+        2032,
+        2176
+      ]
+    },
+    {
+      "parameters": {
+        "jsonMode": "expressionData",
+        "jsonData": "={{ $json.topic + '\\n\\n' + $json.content }}",
+        "options": {
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "id",
+                "value": "={{ $json.id }}"
+              },
+              {
+                "name": "source",
+                "value": "={{ $json.source }}"
+              },
+              {
+                "name": "document_type",
+                "value": "={{ $json.document_type }}"
+              },
+              {
+                "name": "language",
+                "value": "={{ $json.language }}"
+              },
+              {
+                "name": "domain",
+                "value": "={{ $json.domain }}"
+              },
+              {
+                "name": "category",
+                "value": "={{ $json.category }}"
+              },
+              {
+                "name": "rule",
+                "value": "={{ $json.rule || '' }}"
+              },
+              {
+                "name": "related_sonar_rules",
+                "value": "={{ ($json.related_sonar_rules || []).join(', ') }}"
+              },
+              {
+                "name": "severity",
+                "value": "={{ ($json.severity || []).join(', ') }}"
+              },
+              {
+                "name": "issue_type",
+                "value": "={{ ($json.issue_type || []).join(', ') }}"
+              },
+              {
+                "name": "keywords",
+                "value": "={{ ($json.keywords || []).join(', ') }}"
+              },
+              {
+                "name": "file_path",
+                "value": "={{ $json.file_path || '' }}"
+              },
+              {
+                "name": "line",
+                "value": "={{ $json.line || '' }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "155cb744-8b46-4cdf-a564-25256a60ab5a",
+      "name": "Default Data Loader",
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1,
+      "position": [
+        2032,
+        2032
+      ]
+    },
+    {
+      "parameters": {
+        "model": "text-embedding-3-large",
+        "options": {}
+      },
+      "id": "15435594-4d41-44f0-958c-a3e6efa2adea",
+      "name": "Embeddings OpenAI",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1,
+      "position": [
+        2064,
+        1888
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "A12Z73F9E2DVm0oI",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "qdrantCollection": {
+          "__rl": true,
+          "value": "knowledge-base",
+          "mode": "list"
+        },
+        "options": {}
+      },
+      "id": "20a368a2-2587-407c-99bf-8ffa4984c1fc",
+      "name": "Qdrant Vector Store",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreQdrant",
+      "typeVersion": 1,
+      "position": [
+        2064,
+        1632
+      ],
+      "credentials": {
+        "qdrantApi": {
+          "id": "bxrKpYUWx13KdfNN",
+          "name": "Qdrant account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Execute Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Command": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Set PDF Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set JSON Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set JSONL Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set PDF Metadata": {
+      "main": [
+        [
+          {
+            "node": "Read PDF File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set JSON Metadata": {
+      "main": [
+        [
+          {
+            "node": "Read JSON File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set JSONL Metadata": {
+      "main": [
+        [
+          {
+            "node": "Read JSONL File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read PDF File": {
+      "main": [
+        [
+          {
+            "node": "Extract From PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read JSON File": {
+      "main": [
+        [
+          {
+            "node": "Extract From JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read JSONL File": {
+      "main": [
+        [
+          {
+            "node": "Extract From JSONL (as text)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract From PDF": {
+      "main": [
+        [
+          {
+            "node": "Normalize Documents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract From JSON": {
+      "main": [
+        [
+          {
+            "node": "Normalize Documents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract From JSONL (as text)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Documents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Documents": {
+      "main": [
+        [
+          {
+            "node": "Qdrant Vector Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recursive Character Text Splitter": {
+      "ai_textSplitter": [
+        [
+          {
+            "node": "Default Data Loader",
+            "type": "ai_textSplitter",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Default Data Loader": {
+      "ai_document": [
+        [
+          {
+            "node": "Qdrant Vector Store",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Qdrant Vector Store",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "e996722f-40a1-40fc-8fe6-2e004bdfc4f8",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "6f768ee046dab6479ea306885b585ec6eb1ecad317bd42f9d743cbbc04869a7d"
+  },
+  "nodeGroups": [],
+  "id": "cG52Vf93Uwe5IUrY",
+  "tags": []
+}
